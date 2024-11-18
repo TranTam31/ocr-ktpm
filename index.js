@@ -1,31 +1,13 @@
+const express = require("express");
+const routes = require("./routes"); // Import các route từ file routes.js
 
-const amqp = require('amqplib');
-const path = require('path')
-const { image2text } = require("./filters/ocr");
-const { createPDF } = require("./filters/pdf");
+const app = express();
+const PORT = 3000;
 
-var dir = "./data/sample.png";
+// Dùng các route từ routes.js
+app.use("/", routes);
 
-async function ConnectToRabbitmq() {
-    const connect = await amqp.connect("amqp://guest:guest@localhost:5672/", (err) => {
-        if (err) throw err;
-    });
-    const channel = await connect.createChannel((err) => {
-        if (err) throw err;
-    });
-    return channel;
-}
-
-ConnectToRabbitmq().then(channel => {
-    var queue = "sendImage";
-    var msg = dir;
-    channel.assertQueue(queue, {
-        durable: false
-    });
-    channel.sendToQueue(queue, Buffer.from(msg));
-    console.log(" [x] Sent %s", msg); 
+// Start server
+app.listen(PORT, () => {
+    console.log(`Server is running at http://localhost:${PORT}`);
 });
-
-(async ()=> {
-    const text = await image2text();
-})();
