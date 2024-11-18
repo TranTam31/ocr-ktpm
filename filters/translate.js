@@ -1,41 +1,35 @@
 const translator = require("open-google-translator");
-const amqp = require("amqplib");
+const { getChannel } = require("../rabbitmq");
 
 async function translate() {
-    const connect = await amqp.connect("amqp://guest:guest@localhost:5672/");
-    const channel = await connect.createChannel();
-
+    const channel = await getChannel();
     const queue = "sendText";
-    console.log(`[x] Listening on queue: ${queue}`);
+
+    // Đảm bảo hàng đợi đầu ra tồn tại
+    const nextQueue = "sendTranslatedText";
+    await channel.assertQueue(nextQueue, { durable: false });
+
     channel.consume(queue, async (msg) => {
         const text = msg.content.toString();
-        console.log(`[x] Received text: ${text}`);
+        console.log("Text received for translation:", text);
 
         try {
-            // Dịch văn bản
-            const translatedText = await translator.TranslateLanguageData({
+            const translation = await translator.TranslateLanguageData({
                 listOfWordsToTranslate: [text],
                 fromLanguage: "en",
                 toLanguage: "vi",
             });
 
-            if (!translatedText || !translatedText[0]?.translation) {
-                throw new Error("Translation failed: No result");
-            }
+            const translatedText = translation[0].translation;
+            console.log("Translated text:", translatedText);
 
-            // Đẩy văn bản dịch vào hàng đợi tiếp theo
-            const nextQueue = "sendTranslatedText";
-            channel.assertQueue(nextQueue, { durable: false });
-            channel.sendToQueue(nextQueue, Buffer.from(translatedText[0].translation));
-            console.log(`[x] Sent translated text: ${translatedText[0].translation}`);
-
-            // Xác nhận đã xử lý thông điệp
-            channel.ack(msg);
+            channel.sendToQueue(nextQueue, Buffer.from(translatedText));
         } catch (error) {
-            console.error("[!] Error during translation:", error.message);
-            channel.nack(msg); // Gửi lại thông điệp vào hàng đợi nếu gặp lỗi
+            console.error("Translation error:", error);
         }
-    });
+    }, { noAck: true });
 }
 
-module.exports = { translate };
+module.exports = {
+    translate,
+};

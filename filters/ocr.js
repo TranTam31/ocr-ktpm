@@ -1,28 +1,17 @@
 const tesseract = require("node-tesseract-ocr");
-const amqp = require("amqplib");
+const { getChannel } = require("../rabbitmq");
 
 async function image2text(filePath) {
-    const connect = await amqp.connect("amqp://guest:guest@localhost:5672/", (err) => {
-        if (err) throw err;
-    });
-    const channel = await connect.createChannel((err) => {
-        if (err) throw err;
-    });
+    const channel = await getChannel();
+    const text = await tesseract.recognize(filePath, { lang: "eng" });
 
-    try {
-        // Thực hiện OCR
-        const text = await tesseract.recognize(filePath);
-        console.log(`[x] OCR Result: ${text}`);
+    const queue = "sendText";
+    channel.assertQueue(queue, { durable: false });
+    channel.sendToQueue(queue, Buffer.from(text));
 
-        // Gửi text vào hàng đợi
-        const queue = "sendText";
-        channel.assertQueue(queue, { durable: false });
-        channel.sendToQueue(queue, Buffer.from(text));
-        console.log(`[x] Sent OCR result to queue: ${queue}`);
-    } catch (error) {
-        console.error("[!] OCR failed:", error.message);
-    }
+    console.log("Extracted text sent to queue:", text);
 }
 
-
-module.exports = { image2text };
+module.exports = {
+    image2text,
+};
