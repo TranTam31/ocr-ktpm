@@ -2,7 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-const cors = require("cors")
+const cors = require("cors");
 const { image2text } = require("./filters/ocr");
 const { translate } = require("./filters/translate");
 const { createPDF } = require("./filters/pdf");
@@ -10,14 +10,11 @@ const { createPDF } = require("./filters/pdf");
 const app = express();
 const PORT = 3000;
 
-app.use(cors({
-    credentials: true,
-    origin: 'http://localhost:5500'
-}))
-
-// Khởi động các worker
-translate();
-createPDF();
+app.use(
+    cors({
+        origin: "*",
+    })
+);
 
 // Tạo thư mục lưu file upload nếu chưa tồn tại
 const uploadDir = path.join(__dirname, "uploads");
@@ -38,14 +35,29 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// Worker khởi chạy chỉ khi cần
+let workersStarted = false;
+
+function startWorkers() {
+    if (workersStarted) {
+        console.log("Starting workers...");
+        translate();
+        createPDF();
+    }
+}
+
 // Route upload ảnh
 app.post("/upload", upload.single("image"), async (req, res) => {
     const filePath = req.file.path;
     console.log(`Uploaded file: ${filePath}`);
 
     try {
+        // Gửi ảnh vào hàng đợi xử lý
         await image2text(filePath);
 
+        // Khởi động các worker
+        workersStarted = true
+        startWorkers();
         const pdfPath = path.join(__dirname, "output", "output.pdf");
         const MAX_WAIT_TIME = 15000;
 
@@ -77,4 +89,4 @@ app.post("/upload", upload.single("image"), async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server is running at http://localhost:${PORT}`);
-});
+})
