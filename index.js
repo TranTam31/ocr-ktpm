@@ -56,14 +56,25 @@ app.post("/upload", upload.single("image"), async (req, res) => {
         await image2text(filePath);
 
         // Khởi động các worker
-        workersStarted = true
+        workersStarted = true;
         startWorkers();
+
         const pdfPath = path.join(__dirname, "output", "output.pdf");
         const MAX_WAIT_TIME = 15000;
 
         const interval = setInterval(() => {
             if (fs.existsSync(pdfPath)) {
                 clearInterval(interval);
+
+                // Xóa ảnh tạm ngay sau khi xử lý thành công
+                fs.unlink(filePath, (err) => {
+                    if (err) {
+                        console.error(`Error deleting temporary file: ${filePath}`, err);
+                    } else {
+                        console.log(`Temporary file deleted: ${filePath}`);
+                    }
+                });
+
                 res.download(pdfPath, "output.pdf", (err) => {
                     if (err) {
                         console.error("Error sending PDF:", err);
@@ -83,10 +94,20 @@ app.post("/upload", upload.single("image"), async (req, res) => {
         }, MAX_WAIT_TIME);
     } catch (error) {
         console.error("Error processing file:", error);
+
+        // Xóa ảnh tạm trong trường hợp gặp lỗi
+        fs.unlink(filePath, (err) => {
+            if (err) {
+                console.error(`Error deleting temporary file after failure: ${filePath}`, err);
+            } else {
+                console.log(`Temporary file deleted after failure: ${filePath}`);
+            }
+        });
+
         res.status(500).send("An error occurred while processing the file.");
     }
 });
 
 app.listen(PORT, () => {
     console.log(`Server is running at http://localhost:${PORT}`);
-})
+});
