@@ -1,43 +1,35 @@
 const translator = require("open-google-translator");
-const amqp = require("amqplib");
-const { createPDF } = require ("./pdf");
-
-translator.supportedLanguages();
+const { getChannel } = require("../rabbitmq");
 
 async function translate() {
-    const connect = await amqp.connect("amqp://guest:guest@localhost:5672/", (err) => {
-        if (err) throw err;
-    });
-    const channel = await connect.createChannel((err) => {
-        if (err) throw err;
-    });
-    var queue = "sendText";
-    channel.consume(queue, async msg => {
-        console.log(msg.content.toString());
-        new Promise((resolve, reject) => {
-            translator
-                .TranslateLanguageData({
-                    listOfWordsToTranslate: [msg.content.toString()],
-                    fromLanguage: "en",
-                    toLanguage: "vi",
-                })
-                .then((data) => {
-                    resolve(data[0].translation);
-                }).catch((err) => {
-                    reject(err)
-                });
-        }).then(async (data)=> {
-            console.log(data);
-            var nextqueue = "sendTranslatedText"
-            channel.assertQueue(nextqueue, {
-            durable: false
+    const channel = await getChannel();
+    const queue = "sendText";
+
+    // Đảm bảo hàng đợi đầu ra tồn tại
+    const nextQueue = "sendTranslatedText";
+    await channel.assertQueue(nextQueue, { durable: false });
+
+    channel.consume(queue, async (msg) => {
+        const text = msg.content.toString();
+        console.log("Text received for translation:", text);
+
+        try {
+            const translation = await translator.TranslateLanguageData({
+                listOfWordsToTranslate: [text],
+                fromLanguage: "en",
+                toLanguage: "vi",
             });
-            channel.sendToQueue(nextqueue, Buffer.from(data));
-            createPDF();
-        })
-    }, {noAck: true});
+
+            const translatedText = translation[0].translation;
+            console.log("Translated text:", translatedText);
+
+            channel.sendToQueue(nextQueue, Buffer.from(translatedText));
+        } catch (error) {
+            console.error("Translation error:", error);
+        }
+    }, { noAck: true });
 }
 
 module.exports = {
-    translate
-}
+    translate,
+};
